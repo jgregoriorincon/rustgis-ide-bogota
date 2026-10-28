@@ -1,0 +1,59 @@
+name: Refresh indexes
+
+# Each plugin carries an index of its catalogue: reading the catalogue live doesn't fit in a
+# plugin command's fuel. Each week this rebuilds the indexes with the plugins' own readers and,
+# when a catalogue changed, opens a pull request with the new index to review and release.
+#
+# The repository must let GitHub Actions create pull requests (Settings › Actions › General ›
+# Workflow permissions). Pull requests opened with the workflow's token don't start CI: close and
+# reopen one, or push to it, to run it.
+on:
+  schedule:
+    # Mondays, 06:00 in Bogotá.
+    - cron: "0 11 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  ide-bogota:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Rebuild the index
+        run: |
+          curl -sSf --retry 3 --max-time 60 'https://catalogopmb.catastrobogota.gov.co/PMBWeb/web/servicios?cmd=queryall' -o "$RUNNER_TEMP/queryall.json"
+          cargo run -q -p ide-bogota --example index -- "$(date -u +%F)" ide-bogota/index.json \
+            < "$RUNNER_TEMP/queryall.json" > "$RUNNER_TEMP/index.json" 2> "$RUNNER_TEMP/summary.txt"
+          cat "$RUNNER_TEMP/summary.txt"
+          summary=$(tail -n 1 "$RUNNER_TEMP/summary.txt")
+          case "$summary" in
+            changed:*)
+              mv "$RUNNER_TEMP/index.json" ide-bogota/index.json
+              echo "SUMMARY=$summary" >> "$GITHUB_ENV"
+              ;;
+            incomplete)
+              echo "::warning::IDECA's catalogue answered with too few services; the index stays as it is."
+              ;;
+          esac
+      - name: Propose the new index
+        if: env.SUMMARY != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="refresh/ide-bogota-index-$(date -u +%F)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add ide-bogota/index.json
+          git commit -m "chore(ide-bogota): refresh IDECA's index"
+          git push -u origin "$branch"
+          gh pr create --title "chore(ide-bogota): refresh IDECA's index" \
+            --body "IDECA's catalogue $SUMMARY since the last index. Review it, then bump ide-bogota's version and release it."

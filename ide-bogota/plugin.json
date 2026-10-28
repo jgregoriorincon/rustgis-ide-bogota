@@ -1,0 +1,87 @@
+{
+  "id": "ide-bogota",
+  "name": "IDE Bogotá",
+  "version": "0.1.0",
+  "description": "Browse IDECA's catalogue of Bogotá's public geographic services and add them to the map: an ArcGIS layer's features in the map view, or a service's map image.",
+  "author": "Jose Gregorio Rincon Albarracin",
+  "homepage": "https://github.com/jgregoriorincon/rustgis-ide-bogota",
+  "license": "MIT",
+  "entry": "plugin.wasm",
+  "abi": 1,
+  "minRustgisVersion": "0.4.0",
+  "permissions": ["edit", "network"],
+  "commands": [
+    { "id": "panel-state", "label": "Refresh", "help": "Read the catalogue again.", "icon": "update" },
+    { "id": "show", "label": "Show", "help": "Show the chosen service's details.", "icon": "identify" },
+    {
+      "id": "add",
+      "label": "Add\nFeatures",
+      "help": "Add the chosen service's features in the map view (an ArcGIS layer, or GeoJSON).",
+      "icon": "add_data"
+    },
+    {
+      "id": "image",
+      "label": "Add Map\nImage",
+      "help": "Add the chosen service as a map image over the basemap (an ArcGIS MapServer or ImageServer).",
+      "icon": "basemap"
+    }
+  ],
+  "panel": {
+    "title": "IDE Bogotá",
+    "icon": "contents",
+    "help": "Browse IDECA's catalogue and add its services to the map.",
+    "state": "panel-state",
+    "items": [
+      { "kind": "text", "id": "source", "label": "Catalogue" },
+      { "kind": "slider", "id": "category", "label": "Category", "min": 0, "max": 999, "steps": true, "command": "show" },
+      { "kind": "slider", "id": "subcategory", "label": "Subcategory", "min": 0, "max": 999, "steps": true, "command": "show" },
+      { "kind": "slider", "id": "service", "label": "Service", "min": 0, "max": 1999, "steps": true, "command": "show" },
+      { "kind": "text", "id": "card", "label": "Service details", "text": "Open the panel to read the catalogue." },
+      { "kind": "button", "command": "add" },
+      { "kind": "button", "command": "image" }
+    ]
+  },
+  "i18n": {
+    "es": {
+      "Browse IDECA's catalogue of Bogotá's public geographic services and add them to the map: an ArcGIS layer's features in the map view, or a service's map image.": "Explora el catálogo de IDECA con los servicios geográficos públicos de Bogotá y agrégalos al mapa: las features de una capa ArcGIS en la vista del mapa, o la imagen del mapa de un servicio.",
+      "Refresh": "Actualizar",
+      "Read the catalogue again.": "Lee el catálogo de nuevo.",
+      "Show": "Mostrar",
+      "Show the chosen service's details.": "Muestra los detalles del servicio elegido.",
+      "Add\nFeatures": "Agregar\nfeatures",
+      "Add the chosen service's features in the map view (an ArcGIS layer, or GeoJSON).": "Agrega las features del servicio elegido en la vista del mapa (una capa ArcGIS, o GeoJSON).",
+      "Add Map\nImage": "Agregar\nimagen",
+      "Add the chosen service as a map image over the basemap (an ArcGIS MapServer or ImageServer).": "Agrega el servicio elegido como imagen del mapa sobre el mapa base (un MapServer o ImageServer de ArcGIS).",
+      "Browse IDECA's catalogue and add its services to the map.": "Explora el catálogo de IDECA y agrega sus servicios al mapa.",
+      "Catalogue": "Catálogo",
+      "Category": "Categoría",
+      "Subcategory": "Subcategoría",
+      "Service": "Servicio",
+      "Service details": "Detalles del servicio",
+      "Open the panel to read the catalogue.": "Abre el panel para leer el catálogo.",
+      "Other": "Otros",
+      "Index of {date}: {n} services.": "Índice del {date}: {n} servicios.",
+      "Built-in index: {n} services.": "Índice incluido: {n} servicios.",
+      "The catalogue has no services to show.": "El catálogo no tiene servicios para mostrar.",
+      "ArcGIS layer": "Capa ArcGIS",
+      "ArcGIS map service": "Servicio de mapa ArcGIS",
+      "ArcGIS image service": "Servicio de imágenes ArcGIS",
+      "Not shown in RustGIS: {reason}": "RustGIS no lo muestra: {reason}",
+      "3D scene layers": "capas de escena 3D",
+      "tables without geometry": "tablas sin geometría",
+      "Licence: {licence}": "Licencia: {licence}",
+      "No licence stated: check it before using the data.": "Sin licencia declarada: revísala antes de usar los datos.",
+      "Filter: {filter}": "Filtro: {filter}",
+      "Metadata: {url}": "Metadatos: {url}",
+      "Added {name}.": "Se agregó {name}.",
+      "Added {name} in the map view.": "Se agregó {name} en la vista del mapa.",
+      "Downloading {name}; it is added when it lands.": "Descargando {name}; se agrega cuando llegue.",
+      "{name}: the map view holds more than the {n} features the service gives at once, so the layer is incomplete. Zoom in and add it again.": "{name}: la vista del mapa tiene más de las {n} features que el servicio entrega de una vez, así que la capa está incompleta. Acércate y agrégala de nuevo.",
+      "In the web app, {name} is shown as a map image; its features need the desktop app.": "En la app web, {name} se muestra como imagen del mapa; sus features necesitan la app de escritorio.",
+      "Added {name} as a map image, over the basemap.": "Se agregó {name} como imagen del mapa, sobre el mapa base.",
+      "{name} can't be added as features: WMS, WFS and WMTS services come in a later version.": "{name} no se puede agregar como features: los servicios WMS, WFS y WMTS llegan en una versión posterior.",
+      "{name} has no map image: only ArcGIS MapServer and ImageServer services draw one.": "{name} no tiene imagen del mapa: solo los MapServer e ImageServer de ArcGIS la dibujan.",
+      "IDE Bogotá has no command '{id}'.": "IDE Bogotá no tiene el comando '{id}'."
+    }
+  }
+}

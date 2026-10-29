@@ -3,6 +3,9 @@
 A [RustGIS](https://github.com/opengeos/RustGIS) plugin to browse the catalogue of
 [IDECA](https://www.ideca.gov.co), Bogotá's spatial data infrastructure, and add its public
 services to the map: an ArcGIS layer's features in the map view, or a service's map image.
+Adding a layer's features again replaces the ones added before with the new view's. When the
+view holds none of a layer, the map goes to its data first (to Bogotá's centre at the scale it is
+drawn at, for a layer drawn only close in).
 
 It needs RustGIS 0.4.0 or later, and the `edit` and `network` permissions.
 

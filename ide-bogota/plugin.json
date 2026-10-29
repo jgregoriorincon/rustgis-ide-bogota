@@ -1,7 +1,7 @@
 {
   "id": "ide-bogota",
   "name": "IDE Bogotá",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Browse IDECA's catalogue of Bogotá's public geographic services and add them to the map: an ArcGIS layer's features in the map view, or a service's map image.",
   "author": "Jose Gregorio Rincon Albarracin",
   "homepage": "https://github.com/jgregoriorincon/rustgis-ide-bogota",
@@ -33,9 +33,7 @@
     "state": "panel-state",
     "items": [
       { "kind": "text", "id": "source", "label": "Catalogue" },
-      { "kind": "slider", "id": "category", "label": "Category", "min": 0, "max": 999, "steps": true, "command": "show" },
-      { "kind": "slider", "id": "subcategory", "label": "Subcategory", "min": 0, "max": 999, "steps": true, "command": "show" },
-      { "kind": "slider", "id": "service", "label": "Service", "min": 0, "max": 1999, "steps": true, "command": "show" },
+      { "kind": "tree", "id": "catalogue", "label": "Services", "search": true, "command": "show" },
       { "kind": "text", "id": "card", "label": "Service details", "text": "Open the panel to read the catalogue." },
       { "kind": "button", "command": "add" },
       { "kind": "button", "command": "image" }
@@ -54,9 +52,8 @@
       "Add the chosen service as a map image over the basemap (an ArcGIS MapServer or ImageServer).": "Agrega el servicio elegido como imagen del mapa sobre el mapa base (un MapServer o ImageServer de ArcGIS).",
       "Browse IDECA's catalogue and add its services to the map.": "Explora el catálogo de IDECA y agrega sus servicios al mapa.",
       "Catalogue": "Catálogo",
-      "Category": "Categoría",
-      "Subcategory": "Subcategoría",
-      "Service": "Servicio",
+      "Services": "Servicios",
+      "Choose a service in the catalogue.": "Elige un servicio en el catálogo.",
       "Service details": "Detalles del servicio",
       "Open the panel to read the catalogue.": "Abre el panel para leer el catálogo.",
       "Other": "Otros",
@@ -79,6 +76,11 @@
       "{name}: the map view holds more than the {n} features the service gives at once, so the layer is incomplete. Zoom in and add it again.": "{name}: la vista del mapa tiene más de las {n} features que el servicio entrega de una vez, así que la capa está incompleta. Acércate y agrégala de nuevo.",
       "In the web app, {name} is shown as a map image; its features need the desktop app.": "En la app web, {name} se muestra como imagen del mapa; sus features necesitan la app de escritorio.",
       "Added {name} as a map image, over the basemap.": "Se agregó {name} como imagen del mapa, sobre el mapa base.",
+      "The map view held none of {name}: zoomed to its data and added it.": "La vista del mapa no tenía nada de {name}: se acercó a sus datos y se agregó.",
+      "The map view held none of {name}: zoomed to its data and added it as a map image.": "La vista del mapa no tenía nada de {name}: se acercó a sus datos y se agregó como imagen del mapa.",
+      "The map view holds none of {name}, and its server didn't say where its data is: move the map to it and add it again.": "La vista del mapa no tiene nada de {name} y su servidor no dijo dónde están sus datos: lleva el mapa hasta ellos y agrégala de nuevo.",
+      "Zoomed to 1:{scale}, where {name} is drawn, and added it.": "Se fue a 1:{scale}, donde se dibuja {name}, y se agregó.",
+      "Zoomed to 1:{scale}, where {name} is drawn, and added it as a map image.": "Se fue a 1:{scale}, donde se dibuja {name}, y se agregó como imagen del mapa.",
       "{name} can't be added as features: WMS, WFS and WMTS services come in a later version.": "{name} no se puede agregar como features: los servicios WMS, WFS y WMTS llegan en una versión posterior.",
       "{name} has no map image: only ArcGIS MapServer and ImageServer services draw one.": "{name} no tiene imagen del mapa: solo los MapServer e ImageServer de ArcGIS la dibujan.",
       "IDE Bogotá has no command '{id}'.": "IDE Bogotá no tiene el comando '{id}'."

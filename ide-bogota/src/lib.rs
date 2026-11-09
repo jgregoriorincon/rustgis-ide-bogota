@@ -424,7 +424,7 @@ fn add(req: &Request, e: &Entry) -> Result<Done, String> {
                     // call: the command runs again when the download lands, and that run would
                     // remove the layer it brought.
                     if let Some(new) = out.get("layer") {
-                        replace(&e.name, new)?;
+                        replace(e, new)?;
                     }
                     let message = if out.get("pending").and_then(Value::as_bool) == Some(true) {
                         req.tr(MANIFEST, "Downloading {name}; it is added when it lands.", &name)
@@ -469,26 +469,59 @@ fn image(req: &Request, e: &Entry) -> Result<Done, String> {
 }
 
 /// Puts the layer `new` an Add Features of the service just added in place of the ones an earlier
-/// one left, named `name`: they go, and `new`, which came in as `name (2)` while they were there,
-/// takes the name.
-fn replace(name: &str, new: &Value) -> Result<(), String> {
-    let layers = host::layers()?;
-    let ids: Vec<Value> = layers
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter(|l| l.get("name").and_then(Value::as_str) == Some(name))
-        .filter_map(|l| l.get("id").cloned())
-        .filter(|id| id != new)
-        .collect();
-    if ids.is_empty() {
-        return Ok(());
-    }
-    for id in ids {
+/// one left: they go, and `new`, which came in as `name (2)` while they were there, takes the
+/// name of the one it replaces. Only the service's own layers go ([`layers_of`]): a layer of the
+/// user's of the same name stays.
+fn replace(e: &Entry, new: &Value) -> Result<(), String> {
+    let old: Vec<(Value, String)> = layers_of(e)?.into_iter().filter(|(id, _)| id != new).collect();
+    let Some((_, name)) = old.first().cloned() else { return Ok(()) };
+    for (id, _) in old {
         host::run("layer.remove", json!({"layer": id}))?;
     }
     host::run("layer.rename", json!({"layer": new, "name": name}))?;
     Ok(())
+}
+
+/// The ids and names of the map's layers that an Add Features of `e` added: named as it (or as it
+/// with RustGIS's ` (2)`, when a layer of that name was there), and read from its query. The name
+/// alone would take a layer of the user's that happens to share it.
+fn layers_of(e: &Entry) -> Result<Vec<(Value, String)>, String> {
+    let layers = host::layers()?;
+    Ok(layers
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|l| Some((l.get("id")?.clone(), l.get("name")?.as_str()?.to_string())))
+        // By name first, so only these layers are asked their source.
+        .filter(|(_, name)| named(e, name))
+        // A layer's source, as Copy Path gives it (no clipboard: that is the app's button).
+        // A layer with none (drawn, or from a file) isn't the service's.
+        .filter(|(id, _)| {
+            host::run("layer.copyPath", json!({"layer": id}))
+                .ok()
+                .and_then(|out| out.get("text").and_then(Value::as_str).map(|source| added_by(e, source)))
+                .unwrap_or(false)
+        })
+        .collect())
+}
+
+/// Whether a layer named `name` may be `e`'s: its name, or its name and ` (n)`, as RustGIS names a
+/// layer added while one of its name is on the map.
+fn named(e: &Entry, name: &str) -> bool {
+    match name.strip_prefix(e.name.as_str()) {
+        Some("") => true,
+        Some(rest) => rest
+            .strip_prefix(" (")
+            .and_then(|r| r.strip_suffix(')'))
+            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())),
+        None => false,
+    }
+}
+
+/// Whether a layer whose source is `source` came from `e`'s features query ([`arcgis::features_url`]).
+/// Up to `/query?`, so layer 65's query isn't layer 652's.
+fn added_by(e: &Entry, source: &str) -> bool {
+    source.strip_prefix(e.url.as_str()).is_some_and(|rest| rest.starts_with("/query?"))
 }
 
 /// Why nothing was added: the view holds none of the layer, and where its data is couldn't be
@@ -524,15 +557,16 @@ fn tiles(req: &Request, e: &Entry, went: Went) -> Result<Done, String> {
 }
 
 /// Adds again, in the map view, the features of the catalogue's layers already on the map (known
-/// by their names), each in place of the one there: a layer holds the view it was added in, and
-/// moving the map fetches nothing. The map stays where it is.
+/// by their names and sources, [`layers_of`]), each in place of the one there: a layer holds the
+/// view it was added in, and moving the map fetches nothing. The map stays where it is.
 fn refresh(req: &Request, entries: &[Entry]) -> Result<Done, String> {
     let layers = host::layers()?;
     let names: Vec<&str> = layers.as_array().into_iter().flatten().filter_map(|l| l.get("name").and_then(Value::as_str)).collect();
     let mut found: Vec<&Entry> = Vec::new();
-    for e in entries.iter().filter(|e| e.kind == Kind::ArcGisLayer && names.contains(&e.name.as_str())) {
-        // Two services of one name: the first, as the map can't tell them apart.
-        if !found.iter().any(|f| f.name == e.name) {
+    // By name first, so only the layers that may be the catalogue's are asked their source.
+    for e in entries.iter().filter(|e| e.kind == Kind::ArcGisLayer && names.iter().any(|n| named(e, n))) {
+        // Two services of one name, both on the map: the first, as the new layers would share it.
+        if !found.iter().any(|f| f.name == e.name) && !layers_of(e)?.is_empty() {
             found.push(e);
         }
     }
@@ -550,7 +584,7 @@ fn refresh(req: &Request, entries: &[Entry]) -> Result<Done, String> {
             waiting = true;
         } else if let Some(new) = out.get("layer") {
             // After the call, as in `add`: the run after the downloads land would remove them.
-            replace(&e.name, new)?;
+            replace(e, new)?;
         }
         answers.push(out);
     }
@@ -695,6 +729,21 @@ mod tests {
 
     fn entry(id: &str, url: &str) -> Entry {
         Entry::new(&Raw { id: Some(id), name: Some("Lote"), url: Some(url), ..Raw::default() }).expect("a valid entry")
+    }
+
+    /// A layer is the service's when its source is the service's features query, not when it has
+    /// its name or another layer's address.
+    #[test]
+    fn a_layer_is_the_services_by_its_source() {
+        let e = entry("652", "https://x/rest/services/a/MapServer/65");
+        let url = arcgis::features_url(&e, None).expect("a layer's features query");
+        assert!(added_by(&e, &url), "{url}");
+        assert!(!added_by(&e, "https://x/rest/services/a/MapServer/652/query?where=1%3D1"), "another layer's query");
+        assert!(!added_by(&e, "https://x/rest/services/a/MapServer/65"), "the layer's address, not its query");
+        assert!(!added_by(&e, "/home/user/Lote.gpkg"), "a file of the same name");
+        // Its name, or its name as RustGIS gives a second layer of it.
+        assert!(named(&e, "Lote") && named(&e, "Lote (2)") && named(&e, "Lote (13)"));
+        assert!(!named(&e, "Lotes") && !named(&e, "Lote (a)") && !named(&e, "Lote ()") && !named(&e, "Lote (2) copy"));
     }
 
     #[test]

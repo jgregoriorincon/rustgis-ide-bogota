@@ -7,7 +7,28 @@ Adding a layer's features again replaces the ones added before with the new view
 view holds none of a layer, the map goes to its data first (to Bogotá's centre at the scale it is
 drawn at, for a layer drawn only close in).
 
-It needs RustGIS 0.4.0 or later, and the `edit` and `network` permissions.
+It needs RustGIS 0.6.0 or later, and the `edit` and `network` permissions.
+
+## Use
+
+The plugin has a ribbon tab of its own, **IDE Bogotá**:
+
+- **Catalogue** opens the IDECA Catalogue panel: the catalogue as a tree with a search box,
+  the chosen service's details (with the scales it is drawn at) and the buttons that apply to
+  it, **Add Features** and **Add Map Image**.
+- **Most Consulted** adds, with one click, IDECA's most consulted services as features in the
+  map view: lots, schools, buildings, postcodes and, under **CADE Network**, CADE, RapiCADE and
+  SuperCADE.
+- **By Theme** holds menus of other layers most maps of Bogotá start from, each listed once:
+  **Cadastre** (blocks, cadastral sectors, reference land values), **Boundaries** (localities,
+  planning units, legalised neighbourhoods), **Education** (public school places, local education
+  offices), **Health** (vaccination points), then the road network.
+- **Basemap** puts one of IDECA's nine basemaps under the map's layers, as Mapas Bogotá offers
+  them: Vector (its main one), Hybrid, Grey and Dark as buttons, and Bike, Blue, Topographic,
+  Toner and Cundinamarca's municipalities under **More Basemaps**. A map away from Bogotá goes
+  there.
+- **Update to View** adds the IDECA layers already on the map again in the map view. A layer
+  holds the features of the view it was added in: moving the map doesn't fetch more.
 
 ## Install
 

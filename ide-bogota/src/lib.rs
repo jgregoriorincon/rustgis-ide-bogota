@@ -20,6 +20,13 @@
 //!   names, so they work from scripts and `rustgis-cli` too (where the panel never opened and
 //!   its tree has no nodes yet): `plugin:ide-bogota/add={"service": "7956"}`.
 //!
+//! - The plugin's ribbon tab, IDE Bogotá, holds what works without choosing anything: the button
+//!   that opens the panel, buttons for IDECA's most consulted services and menus of layers by
+//!   theme ([`REFERENCES`], added as `add` adds them), IDECA's basemaps ([`BASEMAPS`])
+//!   and `refresh-view`, which adds the catalogue's layers on the map again in the map view.
+//!   `show`, `add` and `image` act on the panel's choice, so they are its buttons, not the
+//!   ribbon's.
+//!
 //! In the web app nothing may wait: a fetch not kept yet answers `pending`, the command returns
 //! at once, and RustGIS runs it again when the answer lands.
 
@@ -41,6 +48,117 @@ const MANIFEST: &str = include_str!("../plugin.json");
 const INDEX: &str = include_str!("../index.json");
 /// A tree row's most characters (RustGIS clips labels at 200).
 const LABEL_MAX: usize = 200;
+/// The most downloads a command may leave to RustGIS at once.
+const MAX_DOWNLOADS: usize = 16;
+
+/// A ribbon button that adds one of the catalogue's layers by its id in the catalogue (a test
+/// checks the index still holds it): IDECA's most consulted services and the reference layers
+/// most maps of Bogotá start from, by theme.
+struct Reference {
+    command: &'static str,
+    service: &'static str,
+}
+
+const REFERENCES: [Reference; 18] = [
+    Reference { command: "ref-lote", service: "652" },
+    Reference { command: "ref-manzana", service: "653" },
+    Reference { command: "ref-construccion", service: "651" },
+    Reference { command: "ref-sector", service: "654" },
+    Reference { command: "ref-valor-referencia", service: "36699" },
+    Reference { command: "ref-localidad", service: "646" },
+    Reference { command: "ref-upl", service: "643" },
+    Reference { command: "ref-barrio", service: "22814" },
+    Reference { command: "ref-codigo-postal", service: "504" },
+    Reference { command: "ref-colegios", service: "4060" },
+    Reference { command: "ref-cupos", service: "41534" },
+    Reference { command: "ref-dile", service: "369" },
+    Reference { command: "ref-ips-vacunacion", service: "4148" },
+    Reference { command: "ref-fiebre-amarilla", service: "660" },
+    Reference { command: "ref-cade", service: "608" },
+    Reference { command: "ref-rapicade", service: "609" },
+    Reference { command: "ref-supercade", service: "610" },
+    Reference { command: "ref-malla-vial", service: "5456" },
+];
+
+/// One of IDECA's basemaps, as its catalogue lists them (`PMBWeb/web/servicios?cmd=basemaps`):
+/// a ribbon button each.
+struct Basemap {
+    command: &'static str,
+    /// Its name on the map, translated by the manifest (its ribbon label is the command's).
+    name: &'static str,
+    /// A MapServer with cached tiles, or a VectorTileServer.
+    url: &'static str,
+    /// A MapServer's deepest tile level; `None` for a VectorTileServer, added as its style.
+    max_zoom: Option<u8>,
+}
+
+/// In the ribbon's order: Mapas Bogotá's main basemap (Vector), then imagery and the two plain
+/// ones to show data over, as buttons; the rest in a menu, in Mapas Bogotá's order.
+const BASEMAPS: [Basemap; 9] = [
+    Basemap {
+        command: "basemap-vector",
+        name: "Vector basemap",
+        url: "https://tiles.arcgis.com/tiles/J5ltM0ovtzXUbp7B/arcgis/rest/services/Mapa_Base_Bogot%C3%A1/VectorTileServer",
+        max_zoom: None,
+    },
+    Basemap {
+        command: "basemap-hybrid",
+        name: "Hybrid basemap",
+        url: "https://serviciosgis.catastrobogota.gov.co/arcgis/rest/services/Mapa_Referencia/mapa_hibrido/MapServer",
+        max_zoom: Some(23),
+    },
+    Basemap {
+        command: "basemap-grey",
+        name: "Grey basemap",
+        url: "https://serviciosgis.catastrobogota.gov.co/arcgis/rest/services/Mapa_Referencia/mapa_base_gris/MapServer",
+        max_zoom: Some(23),
+    },
+    Basemap {
+        command: "basemap-dark",
+        name: "Dark basemap",
+        url: "https://serviciosgis.catastrobogota.gov.co/arcgis/rest/services/Mapa_Referencia/mapa_base_oscuro_3857/MapServer",
+        max_zoom: Some(20),
+    },
+    Basemap {
+        command: "basemap-bike",
+        name: "Bike basemap",
+        url: "https://tiles.arcgis.com/tiles/J5ltM0ovtzXUbp7B/arcgis/rest/services/mapabasebici_temp/VectorTileServer",
+        max_zoom: None,
+    },
+    Basemap {
+        command: "basemap-blue",
+        name: "Blue basemap",
+        url: "https://tiles.arcgis.com/tiles/J5ltM0ovtzXUbp7B/arcgis/rest/services/mapabaseazul/VectorTileServer",
+        max_zoom: None,
+    },
+    Basemap {
+        command: "basemap-topographic",
+        name: "Topographic basemap",
+        url: "https://serviciosgis.catastrobogota.gov.co/arcgis/rest/services/Mapa_Referencia/mapa_base_3857/MapServer",
+        max_zoom: Some(23),
+    },
+    Basemap {
+        command: "basemap-toner",
+        name: "Toner basemap",
+        url: "https://serviciosgis.catastrobogota.gov.co/arcgis/rest/services/Mapa_Referencia/mapa_base_toner/MapServer",
+        max_zoom: Some(23),
+    },
+    Basemap {
+        command: "basemap-cundinamarca",
+        name: "Cundinamarca municipalities basemap",
+        url: "https://serviciosgis.catastrobogota.gov.co/arcgis/rest/services/Mapa_Referencia/mapabasemunicipioscundinamarca/MapServer",
+        max_zoom: Some(23),
+    },
+];
+
+/// Bogotá's urban area, longitude/latitude: where a basemap of IDECA's takes a map that shows
+/// none of Bogotá.
+const BOGOTA: [f64; 4] = [-74.23, 4.47, -73.99, 4.84];
+/// Bogotá D.C. whole, rural Sumapaz too: a view whose centre is in it already shows the city.
+const BOGOTA_DC: [f64; 4] = [-74.46, 3.73, -73.98, 4.84];
+
+/// What a command answered, and what it says it did (shown in the status bar and the panel).
+type Done = (Value, Option<String>);
 
 #[cfg(target_arch = "wasm32")]
 rustgis_plugin::export!(handle);
@@ -48,21 +166,50 @@ rustgis_plugin::export!(handle);
 fn handle(req: Request) -> Result<Value, String> {
     let (date, entries) = index::read(&serde_json::from_str(INDEX).unwrap_or(Value::Null));
     let other = req.tr(MANIFEST, "Other", &[]);
-    let service = chosen(&req, &entries);
+    let reference = REFERENCES.iter().find(|r| r.command == req.id);
+    // A reference layer's button chooses it in the panel too.
+    let service = match reference {
+        Some(r) => entries.iter().find(|e| e.id == r.service),
+        None => chosen(&req, &entries),
+    };
     let pick = || service.ok_or_else(|| req.tr(MANIFEST, "Choose a service in the catalogue.", &[]));
-    let answer = match req.id.as_str() {
-        "panel-state" | "show" => Value::Null,
+    // The layer's description, for the scales on its card: read when a service is chosen.
+    let mut layer = None;
+    let (answer, said) = match req.id.as_str() {
+        "panel-state" => (Value::Null, None),
+        "show" => {
+            layer = service.filter(|e| e.kind == Kind::ArcGisLayer).and_then(describe);
+            (Value::Null, None)
+        }
         "add" => add(&req, pick()?)?,
         "image" => image(&req, pick()?)?,
-        other => return Err(req.tr(MANIFEST, "IDE Bogotá has no command '{id}'.", &[("id", other)])),
+        "refresh-view" => refresh(&req, &entries)?,
+        id => match (reference, BASEMAPS.iter().find(|b| b.command == id)) {
+            (Some(_), _) => {
+                let e = service
+                    .ok_or_else(|| req.tr(MANIFEST, "This layer is no longer in IDECA's catalogue: look for it in the catalogue.", &[]))?;
+                add(&req, e)?
+            }
+            (None, Some(b)) => basemap(&req, b)?,
+            (None, None) => return Err(req.tr(MANIFEST, "IDE Bogotá has no command '{id}'.", &[("id", id)])),
+        },
     };
+    if let Some(text) = &said {
+        host::notify(text);
+    }
     let n = entries.len().to_string();
     let source = if date.is_empty() {
         req.tr(MANIFEST, "Built-in index: {n} services.", &[("n", &n)])
     } else {
         req.tr(MANIFEST, "Index of {date}: {n} services.", &[("date", &date), ("n", &n)])
     };
-    Ok(panel(&req, source, catalogue(&entries, &other), service).answer(answer))
+    let p = panel(&req, source, catalogue(&entries, &other), service, layer.as_ref());
+    // What the last command did, under the buttons; gone once another service is chosen.
+    let p = match said {
+        Some(text) => p.text("result", text).visible("result", true),
+        None => p.visible("result", false),
+    };
+    Ok(p.answer(answer))
 }
 
 /// The service the command acts on: the one its `service` parameter names (scripts), else the
@@ -232,8 +379,8 @@ fn fit_scale(range: (Option<f64>, Option<f64>)) -> Result<Option<f64>, String> {
     Ok(host::run("map.goToXY", json!({"lon": lon, "lat": lat, "scale": target})).ok().map(|_| target))
 }
 
-/// A layer's description (`…/MapServer/3?f=json`): how many features it gives at once and the
-/// scales it draws at. `Null` when the server doesn't give it; `None` while the web app asks.
+/// A layer's description (`…/MapServer/3?f=json`): the scales it draws at and the box of its
+/// data. `Null` when the server doesn't give it; `None` while the web app asks.
 fn describe(e: &Entry) -> Option<Value> {
     match fetch(&format!("{}?f=json", e.url)) {
         Fetched::Doc(layer) => Some(layer),
@@ -250,40 +397,37 @@ fn scale_text(scale: f64) -> String {
 /// Adds a service's features: an ArcGIS layer's in the map view, filtered by the server, or a
 /// GeoJSON document. In the web app, where a command can't download features, an ArcGIS layer's
 /// map image instead.
-fn add(req: &Request, e: &Entry) -> Result<Value, String> {
+fn add(req: &Request, e: &Entry) -> Result<Done, String> {
     let name = [("name", e.name.as_str())];
     match e.kind {
         Kind::GeoJson => {
             let out = host::run("layer.addUrl", json!({"url": e.url, "name": e.name}))?;
-            host::notify(&req.tr(MANIFEST, "Added {name}.", &name));
-            Ok(out)
+            Ok((out, Some(req.tr(MANIFEST, "Added {name}.", &name))))
         }
         Kind::ArcGisLayer => {
-            let Some(layer) = describe(e) else { return Ok(json!({"pending": true})) };
-            let limit = arcgis::max_records(&layer);
+            let Some(layer) = describe(e) else { return Ok((json!({"pending": true}), None)) };
             let went = to_data(e, &layer)?;
             match went {
-                Went::Pending => return Ok(json!({"pending": true})),
+                Went::Pending => return Ok((json!({"pending": true}), None)),
                 Went::Lost => return Err(lost(req, e)),
                 _ => {}
             }
             let view = arcgis::view_of(&host::view()?);
-            let url = arcgis::features_url(e, view, limit).ok_or_else(|| not_features(req, e))?;
-            // One layer per service: the one an earlier Add Features left goes, so the map shows
-            // the view asked for last (a failed add puts it back with the rest).
-            replace(&e.name)?;
-            match host::run("layer.addUrl", json!({"url": url, "name": e.name, "zoom": false})) {
+            let url = arcgis::features_url(e, view).ok_or_else(|| not_features(req, e))?;
+            // A service's features: in the app RustGIS reads them in pages, as protocol buffers
+            // when the layer lists them (else GeoJSON), off the frame; `rustgis-cli` takes the
+            // server's one answer. Either way RustGIS itself says when some were left out.
+            match host::run("layer.addUrl", json!({"url": url, "name": e.name, "zoom": false, "service": true})) {
                 Ok(out) => {
-                    let features = out.get("features").and_then(Value::as_u64);
-                    let n = limit.to_string();
+                    // One layer per service: the one an earlier Add Features left goes once the
+                    // new one is in, so the map shows the view asked for last. Not before the
+                    // call: the command runs again when the download lands, and that run would
+                    // remove the layer it brought.
+                    if let Some(new) = out.get("layer") {
+                        replace(&e.name, new)?;
+                    }
                     let message = if out.get("pending").and_then(Value::as_bool) == Some(true) {
                         req.tr(MANIFEST, "Downloading {name}; it is added when it lands.", &name)
-                    } else if features.is_some_and(|f| f >= u64::from(limit)) {
-                        req.tr(
-                            MANIFEST,
-                            "{name}: the map view holds more than the {n} features the service gives at once, so the layer is incomplete. Zoom in and add it again.",
-                            &[("name", &e.name), ("n", &n)],
-                        )
                     } else {
                         match went {
                             Went::Moved => req.tr(MANIFEST, "The map view held none of {name}: zoomed to its data and added it.", &name),
@@ -295,17 +439,13 @@ fn add(req: &Request, e: &Entry) -> Result<Value, String> {
                             _ => req.tr(MANIFEST, "Added {name} in the map view.", &name),
                         }
                     };
-                    host::notify(&message);
-                    Ok(out)
+                    Ok((out, Some(message)))
                 }
                 Err(err) if err.contains("web app") && arcgis::image_template(e).is_some() => {
-                    let out = tiles(req, e, went)?;
-                    host::notify(&req.tr(
-                        MANIFEST,
-                        "In the web app, {name} is shown as a map image; its features need the desktop app.",
-                        &name,
-                    ));
-                    Ok(out)
+                    let (out, _) = tiles(req, e, went)?;
+                    let message =
+                        req.tr(MANIFEST, "In the web app, {name} is shown as a map image; its features need the desktop app.", &name);
+                    Ok((out, Some(message)))
                 }
                 Err(err) => Err(err),
             }
@@ -316,20 +456,22 @@ fn add(req: &Request, e: &Entry) -> Result<Value, String> {
 
 /// Adds a MapServer's or ImageServer's map image as a tile layer over the basemap, after taking
 /// the map to where a layer shows ([`to_data`]; a whole service can't be asked).
-fn image(req: &Request, e: &Entry) -> Result<Value, String> {
+fn image(req: &Request, e: &Entry) -> Result<Done, String> {
     if arcgis::image_template(e).is_none() || e.kind != Kind::ArcGisLayer {
         return tiles(req, e, Went::Stayed);
     }
-    let Some(layer) = describe(e) else { return Ok(json!({"pending": true})) };
+    let Some(layer) = describe(e) else { return Ok((json!({"pending": true}), None)) };
     match to_data(e, &layer)? {
-        Went::Pending => Ok(json!({"pending": true})),
+        Went::Pending => Ok((json!({"pending": true}), None)),
         Went::Lost => Err(lost(req, e)),
         went => tiles(req, e, went),
     }
 }
 
-/// Removes the layers named `name`: those an earlier Add Features of the service added.
-fn replace(name: &str) -> Result<(), String> {
+/// Puts the layer `new` an Add Features of the service just added in place of the ones an earlier
+/// one left, named `name`: they go, and `new`, which came in as `name (2)` while they were there,
+/// takes the name.
+fn replace(name: &str, new: &Value) -> Result<(), String> {
     let layers = host::layers()?;
     let ids: Vec<Value> = layers
         .as_array()
@@ -337,10 +479,15 @@ fn replace(name: &str) -> Result<(), String> {
         .flatten()
         .filter(|l| l.get("name").and_then(Value::as_str) == Some(name))
         .filter_map(|l| l.get("id").cloned())
+        .filter(|id| id != new)
         .collect();
+    if ids.is_empty() {
+        return Ok(());
+    }
     for id in ids {
         host::run("layer.remove", json!({"layer": id}))?;
     }
+    host::run("layer.rename", json!({"layer": new, "name": name}))?;
     Ok(())
 }
 
@@ -355,7 +502,7 @@ fn lost(req: &Request, e: &Entry) -> String {
 }
 
 /// The map image's tile layer; `went` says whether the map just went to the data.
-fn tiles(req: &Request, e: &Entry, went: Went) -> Result<Value, String> {
+fn tiles(req: &Request, e: &Entry, went: Went) -> Result<Done, String> {
     let name = [("name", e.name.as_str())];
     let template = arcgis::image_template(e)
         .ok_or_else(|| req.tr(MANIFEST, "{name} has no map image: only ArcGIS MapServer and ImageServer services draw one.", &name))?;
@@ -373,8 +520,78 @@ fn tiles(req: &Request, e: &Entry, went: Went) -> Result<Value, String> {
         ),
         _ => req.tr(MANIFEST, "Added {name} as a map image, over the basemap.", &name),
     };
-    host::notify(&message);
-    Ok(out)
+    Ok((out, Some(message)))
+}
+
+/// Adds again, in the map view, the features of the catalogue's layers already on the map (known
+/// by their names), each in place of the one there: a layer holds the view it was added in, and
+/// moving the map fetches nothing. The map stays where it is.
+fn refresh(req: &Request, entries: &[Entry]) -> Result<Done, String> {
+    let layers = host::layers()?;
+    let names: Vec<&str> = layers.as_array().into_iter().flatten().filter_map(|l| l.get("name").and_then(Value::as_str)).collect();
+    let mut found: Vec<&Entry> = Vec::new();
+    for e in entries.iter().filter(|e| e.kind == Kind::ArcGisLayer && names.contains(&e.name.as_str())) {
+        // Two services of one name: the first, as the map can't tell them apart.
+        if !found.iter().any(|f| f.name == e.name) {
+            found.push(e);
+        }
+    }
+    if found.is_empty() {
+        return Err(req.tr(MANIFEST, "The map holds none of IDECA's layers: add one from the catalogue or the ribbon first.", &[]));
+    }
+    found.truncate(MAX_DOWNLOADS);
+    let view = arcgis::view_of(&host::view()?);
+    let mut waiting = false;
+    let mut answers = Vec::new();
+    for e in &found {
+        let Some(url) = arcgis::features_url(e, view) else { continue };
+        let out = host::run("layer.addUrl", json!({"url": url, "name": e.name, "zoom": false, "service": true}))?;
+        if out.get("pending").and_then(Value::as_bool) == Some(true) {
+            waiting = true;
+        } else if let Some(new) = out.get("layer") {
+            // After the call, as in `add`: the run after the downloads land would remove them.
+            replace(&e.name, new)?;
+        }
+        answers.push(out);
+    }
+    let list = found.iter().map(|e| e.name.as_str()).collect::<Vec<_>>().join(", ");
+    let message = if waiting {
+        req.tr(MANIFEST, "Updating to the map view: {names}. Each layer is replaced when it lands.", &[("names", &list)])
+    } else {
+        req.tr(MANIFEST, "Updated to the map view: {names}.", &[("names", &list)])
+    };
+    Ok((json!({"layers": answers}), Some(message)))
+}
+
+/// Puts one of IDECA's basemaps under the map's layers, in place of the other tile basemaps.
+fn basemap(req: &Request, b: &Basemap) -> Result<Done, String> {
+    let name = req.tr(MANIFEST, b.name, &[]);
+    let mut params =
+        json!({"name": name, "overlay": false, "replace": true, "id": format!("ide-bogota-{}", b.command), "attribution": "IDECA - UAECD"});
+    match b.max_zoom {
+        Some(z) => {
+            params["url"] = json!(format!("{}/tile/{{z}}/{{y}}/{{x}}", b.url));
+            params["kind"] = json!("raster");
+            params["maxZoom"] = json!(z);
+        }
+        // Its style, as Add From Service adds a VectorTileServer.
+        None => {
+            params["url"] = json!(format!("{}/resources/styles/root.json", b.url));
+            params["kind"] = json!("style");
+        }
+    }
+    let out = host::run("map.addTiles", params)?;
+    // IDECA's basemaps draw Bogotá and its surroundings: a map elsewhere goes there.
+    let view = host::view()?;
+    let centre = view.get("center").and_then(Value::as_array).and_then(|c| Some([c.first()?.as_f64()?, c.get(1)?.as_f64()?]));
+    let away =
+        centre.is_none_or(|[lon, lat]| !(BOGOTA_DC[0]..=BOGOTA_DC[2]).contains(&lon) || !(BOGOTA_DC[1]..=BOGOTA_DC[3]).contains(&lat));
+    let message = if away && host::run("map.zoomToExtent", json!({"extent": BOGOTA})).is_ok() {
+        req.tr(MANIFEST, "Basemap: {name}. The map went to Bogotá, which it draws.", &[("name", &name)])
+    } else {
+        req.tr(MANIFEST, "Basemap: {name}.", &[("name", &name)])
+    };
+    Ok((out, Some(message)))
 }
 
 /// Why a service can't be added as features.
@@ -397,30 +614,48 @@ fn tile_id(e: &Entry) -> String {
 }
 
 /// The panel's state: the index it shows, the tree (sent with every answer, so that a script's
-/// choice finds its nodes), the service's details and which buttons apply to it.
-fn panel(req: &Request, source: String, nodes: Vec<Node>, service: Option<&Entry>) -> Panel {
+/// choice finds its nodes), the service's details (with the scales it draws at, from `layer`, its
+/// description, when read) and the buttons that apply to it, the others hidden.
+fn panel(req: &Request, source: String, nodes: Vec<Node>, service: Option<&Entry>, layer: Option<&Value>) -> Panel {
     let empty = nodes.is_empty();
     let p = Panel::new().text("source", source).nodes("catalogue", nodes);
     match service {
         Some(e) => p
             .value("catalogue", e.id.as_str())
-            .text("card", card(req, e))
-            .enabled("add", matches!(e.kind, Kind::ArcGisLayer | Kind::GeoJson))
-            .enabled("image", arcgis::image_template(e).is_some()),
+            .text("card", card(req, e, layer))
+            .visible("add", matches!(e.kind, Kind::ArcGisLayer | Kind::GeoJson))
+            .visible("image", arcgis::image_template(e).is_some()),
         None => {
             let none = if empty {
                 req.tr(MANIFEST, "The catalogue has no services to show.", &[])
             } else {
                 req.tr(MANIFEST, "Choose a service in the catalogue.", &[])
             };
-            p.text("card", none).enabled("add", false).enabled("image", false)
+            p.text("card", none).visible("add", false).visible("image", false)
         }
     }
 }
 
-/// A service's details, a line each: what it is, who publishes it, its licence, filter and
-/// metadata, and its address.
-fn card(req: &Request, e: &Entry) -> String {
+/// The scales a layer draws at, from its description, for its card: why Add Features and Add
+/// Map Image go in first when the map is further out.
+fn drawn_at(req: &Request, layer: &Value) -> Option<String> {
+    match arcgis::scale_range(layer) {
+        (Some(min), Some(max)) => Some(req.tr(
+            MANIFEST,
+            "Drawn between 1:{min} and 1:{max}: the map goes there first.",
+            &[("min", &scale_text(min)), ("max", &scale_text(max))],
+        )),
+        (Some(min), None) => {
+            Some(req.tr(MANIFEST, "Drawn from 1:{min} in: the map goes there first when it is further out.", &[("min", &scale_text(min))]))
+        }
+        (None, Some(max)) => Some(req.tr(MANIFEST, "Drawn down to 1:{max}.", &[("max", &scale_text(max))])),
+        (None, None) => None,
+    }
+}
+
+/// A service's details, a line each: what it is, the scales it draws at (from `layer`, when
+/// read), who publishes it, its licence, filter and metadata, and its address.
+fn card(req: &Request, e: &Entry, layer: Option<&Value>) -> String {
     let kind = match e.kind {
         Kind::ArcGisLayer => req.tr(MANIFEST, "ArcGIS layer", &[]),
         Kind::ArcGisService => req.tr(MANIFEST, "ArcGIS map service", &[]),
@@ -432,6 +667,7 @@ fn card(req: &Request, e: &Entry) -> String {
         Kind::Unsupported(_) => not_features(req, e),
     };
     let mut lines = vec![e.name.clone(), kind];
+    lines.extend(layer.and_then(|l| drawn_at(req, l)));
     let theme: Vec<&str> = [e.category.as_deref(), e.subcategory.as_deref()].into_iter().flatten().collect();
     if !theme.is_empty() {
         lines.push(theme.join(" › "));
@@ -583,6 +819,71 @@ mod tests {
         assert_eq!(tile_id(&entry("{A8/B}", "https://x/rest/services/a/MapServer/0")), "ide-bogota--A8-B-");
     }
 
+    fn manifest() -> Value {
+        serde_json::from_str(MANIFEST).expect("plugin.json is JSON")
+    }
+
+    /// Every command id the tab names, menus opened.
+    fn tab_items(manifest: &Value) -> Vec<String> {
+        fn walk(items: &[Value], out: &mut Vec<String>) {
+            for i in items {
+                match i {
+                    Value::String(id) => out.push(id.clone()),
+                    menu => walk(menu["items"].as_array().map_or(&[][..], Vec::as_slice), out),
+                }
+            }
+        }
+        let mut out = Vec::new();
+        for g in manifest["tab"]["groups"].as_array().expect("a tab with groups") {
+            walk(g["items"].as_array().expect("a group's items"), &mut out);
+        }
+        out
+    }
+
+    #[test]
+    fn the_ribbon_holds_what_needs_no_choice() {
+        let manifest = manifest();
+        let commands: Vec<&str> = manifest["commands"].as_array().unwrap().iter().filter_map(|c| c["id"].as_str()).collect();
+        let tab = tab_items(&manifest);
+        // Every command is handled: the panel's, the reference layers' and the basemaps'.
+        let mut handled = vec!["panel-state", "show", "add", "image", "refresh-view"];
+        handled.extend(REFERENCES.iter().map(|r| r.command));
+        handled.extend(BASEMAPS.iter().map(|b| b.command));
+        let (mut a, mut b) = (commands.clone(), handled.clone());
+        a.sort_unstable();
+        b.sort_unstable();
+        assert_eq!(a, b, "the manifest's commands are the ones handled");
+        // The tab: the panel, then the commands that act on nothing chosen; not the panel's.
+        let mut wanted = vec!["panel".to_string(), "refresh-view".to_string()];
+        wanted.extend(REFERENCES.iter().map(|r| r.command.to_string()));
+        wanted.extend(BASEMAPS.iter().map(|b| b.command.to_string()));
+        // Each once: a most consulted layer isn't in its theme's menu too.
+        let (mut t, mut w) = (tab.clone(), wanted);
+        t.sort_unstable();
+        w.sort_unstable();
+        assert_eq!(t, w);
+        // The basemaps' buttons first, in their order, then the menu with the others.
+        let group = manifest["tab"]["groups"].as_array().unwrap().iter().find(|g| g["label"] == "Basemap").expect("a Basemap group");
+        let mut shown: Vec<String> = Vec::new();
+        for i in group["items"].as_array().unwrap() {
+            match i {
+                Value::String(id) => shown.push(id.clone()),
+                menu => shown.extend(menu["items"].as_array().unwrap().iter().filter_map(|c| c.as_str().map(str::to_string))),
+            }
+        }
+        assert_eq!(shown, BASEMAPS.iter().map(|b| b.command.to_string()).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn the_reference_layers_are_in_the_index() {
+        let (_, entries) = index::read(&serde_json::from_str(INDEX).expect("index.json is JSON"));
+        for r in &REFERENCES {
+            let e =
+                entries.iter().find(|e| e.id == r.service).unwrap_or_else(|| panic!("{} ({}) left the catalogue", r.command, r.service));
+            assert_eq!(e.kind, Kind::ArcGisLayer, "{}: {} isn't an ArcGIS layer", r.command, e.name);
+        }
+    }
+
     #[test]
     fn every_message_has_its_spanish() {
         let manifest: Value = serde_json::from_str(MANIFEST).expect("plugin.json is JSON");
@@ -598,7 +899,8 @@ mod tests {
                 missing.push(text.to_string());
             }
         }
-        for reason in ["3D scene layers", "tables without geometry"] {
+        let labels = BASEMAPS.iter().map(|b| b.name);
+        for reason in ["3D scene layers", "tables without geometry"].into_iter().chain(labels) {
             if !es.contains_key(reason) {
                 missing.push(reason.to_string());
             }

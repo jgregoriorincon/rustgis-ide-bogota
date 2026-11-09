@@ -40,6 +40,8 @@ ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
 TARGET = ROOT / "target" / "wasm32-unknown-unknown" / "release"
 BUILD_PY = "https://raw.githubusercontent.com/opengeos/rustgis-plugins/main/scripts/build.py"
+# Each plugin's categories in the registry, so the release's entry is the one submitted.
+CATEGORIES = {"ide-bogota": ["Basemaps", "Cartography", "Data", "Vector"]}
 # A fixed timestamp, so the same plugin.json and module make the same package (and SHA-256).
 ZIP_TIME = (2024, 1, 1, 0, 0, 0)
 
@@ -157,12 +159,14 @@ def main() -> int:
     if not repo and re.match(r"^https://github\.com/[^/]+/[^/]+$", manifest.get("homepage", "")):
         repo = manifest["homepage"].removeprefix("https://github.com/")
     url = args.url or (f"https://github.com/{repo}/releases/download/{tag}/{name}" if repo else f"https://<where you publish it>/{name}")
-    registry_entry = {"id": plugin_id, "source": {"url": url, "sha256": sha}, "categories": ["Utilities"]}
+    # As listed in opengeos/rustgis-plugins (one to four of its categories).
+    categories = CATEGORIES.get(plugin_id, ["Utilities"])
+    registry_entry = {"id": plugin_id, "source": {"url": url, "sha256": sha}, "categories": categories}
     (DIST / f"{plugin_id}.json").write_text(json.dumps(registry_entry, indent=2) + "\n", encoding="utf-8")
 
     print(f"dist/{name}  {len(data):,} bytes  sha256 {sha}")
     print(f"dist/{plugin_id}/  the plugin folder, to load while you work")
-    print(f"dist/{plugin_id}.json  the registry entry (set its categories before you submit it)")
+    print(f"dist/{plugin_id}.json  the registry entry, categories {', '.join(categories)}")
     return 0
 
 

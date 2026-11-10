@@ -2,7 +2,7 @@
 # The crate's name doesn't matter to RustGIS (the plugin's id is in plugin.json), but
 # scripts/package.py finds the module by it, so it is the plugin's id.
 name = "ide-bogota"
-version = "0.3.2"
+version = "0.3.3"
 edition.workspace = true
 license.workspace = true
 publish = false

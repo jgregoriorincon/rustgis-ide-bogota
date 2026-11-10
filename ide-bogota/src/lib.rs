@@ -39,6 +39,7 @@ pub mod ideca;
 use ide_core::arcgis;
 use ide_core::browse::{self, clip};
 use ide_core::index;
+use ide_core::layers;
 use ide_core::{Entry, Kind};
 use rustgis_plugin::{Node, Panel, Request, Value, host, json, serde_json};
 
@@ -50,9 +51,9 @@ const INDEX: &str = include_str!("../index.json");
 const LABEL_MAX: usize = 200;
 /// The most downloads a command may leave to RustGIS at once.
 const MAX_DOWNLOADS: usize = 16;
-/// A parameter of the plugin's own on the features queries it adds, which ArcGIS servers ignore:
-/// a layer's source keeps it, so the plugin knows its layers from the same query added by hand.
-const MARK: &str = "rustgis-plugin=ide-bogota";
+/// The plugin's id, as `plugin.json` gives it: its features queries carry it
+/// ([`layers::mark`]), so it knows its layers from the same query added by hand.
+const PLUGIN: &str = "ide-bogota";
 
 /// A ribbon button that adds one of the catalogue's layers by its id in the catalogue (a test
 /// checks the index still holds it): IDECA's most consulted services and the reference layers
@@ -416,7 +417,7 @@ fn add(req: &Request, e: &Entry) -> Result<Done, String> {
                 _ => {}
             }
             let view = arcgis::view_of(&host::view()?);
-            let url = features_url(e, view).ok_or_else(|| not_features(req, e))?;
+            let url = layers::features_url(e, view, PLUGIN).ok_or_else(|| not_features(req, e))?;
             // A service's features: in the app RustGIS reads them in pages, as protocol buffers
             // when the layer lists them (else GeoJSON), off the frame; `rustgis-cli` takes the
             // server's one answer. Either way RustGIS itself says when some were left out.
@@ -496,44 +497,16 @@ fn layers_of(e: &Entry) -> Result<Vec<(Value, String)>, String> {
         .flatten()
         .filter_map(|l| Some((l.get("id")?.clone(), l.get("name")?.as_str()?.to_string())))
         // By name first, so only these layers are asked their source.
-        .filter(|(_, name)| named(e, name))
+        .filter(|(_, name)| layers::named(e, name))
         // A layer's source, as Copy Path gives it (no clipboard: that is the app's button).
         // A layer with none (drawn, or from a file) isn't the service's.
         .filter(|(id, _)| {
             host::run("layer.copyPath", json!({"layer": id}))
                 .ok()
-                .and_then(|out| out.get("text").and_then(Value::as_str).map(|source| added_by(e, source)))
+                .and_then(|out| out.get("text").and_then(Value::as_str).map(|source| layers::added_by(e, source, PLUGIN)))
                 .unwrap_or(false)
         })
         .collect())
-}
-
-/// Whether a layer named `name` may be `e`'s: its name, or its name and ` (n)`, as RustGIS names a
-/// layer added while one of its name is on the map.
-fn named(e: &Entry, name: &str) -> bool {
-    match name.strip_prefix(e.name.as_str()) {
-        Some("") => true,
-        Some(rest) => rest
-            .strip_prefix(" (")
-            .and_then(|r| r.strip_suffix(')'))
-            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())),
-        None => false,
-    }
-}
-
-/// `e`'s features query ([`arcgis::features_url`]), with the plugin's [`MARK`].
-fn features_url(e: &Entry, view: Option<arcgis::View>) -> Option<String> {
-    arcgis::features_url(e, view).map(|url| format!("{url}&{MARK}"))
-}
-
-/// Whether a layer whose source is `source` is one the plugin added of `e`: `e`'s features query
-/// (up to `/query?`, so layer 65's query isn't layer 652's), with the plugin's [`MARK`]. The same
-/// query added by hand, or by 0.3.1 and earlier, has no mark and isn't the plugin's.
-fn added_by(e: &Entry, source: &str) -> bool {
-    source
-        .strip_prefix(e.url.as_str())
-        .and_then(|rest| rest.strip_prefix("/query?"))
-        .is_some_and(|params| params.split('&').any(|p| p == MARK))
 }
 
 /// Why nothing was added: the view holds none of the layer, and where its data is couldn't be
@@ -576,7 +549,7 @@ fn refresh(req: &Request, entries: &[Entry]) -> Result<Done, String> {
     let names: Vec<&str> = layers.as_array().into_iter().flatten().filter_map(|l| l.get("name").and_then(Value::as_str)).collect();
     let mut found: Vec<&Entry> = Vec::new();
     // By name first, so only the layers that may be the catalogue's are asked their source.
-    for e in entries.iter().filter(|e| e.kind == Kind::ArcGisLayer && names.iter().any(|n| named(e, n))) {
+    for e in entries.iter().filter(|e| e.kind == Kind::ArcGisLayer && names.iter().any(|n| layers::named(e, n))) {
         // Two services of one name, both on the map: the first, as the new layers would share it.
         if !found.iter().any(|f| f.name == e.name) && !layers_of(e)?.is_empty() {
             found.push(e);
@@ -590,7 +563,7 @@ fn refresh(req: &Request, entries: &[Entry]) -> Result<Done, String> {
     let mut waiting = false;
     let mut answers = Vec::new();
     for e in &found {
-        let Some(url) = features_url(e, view) else { continue };
+        let Some(url) = layers::features_url(e, view, PLUGIN) else { continue };
         let out = host::run("layer.addUrl", json!({"url": url, "name": e.name, "zoom": false, "service": true}))?;
         if out.get("pending").and_then(Value::as_bool) == Some(true) {
             waiting = true;
@@ -743,33 +716,14 @@ mod tests {
         Entry::new(&Raw { id: Some(id), name: Some("Lote"), url: Some(url), ..Raw::default() }).expect("a valid entry")
     }
 
-    /// A layer is the plugin's when its source is the service's features query with the plugin's
-    /// mark, not when it has its name, another layer's address, or the same query added by hand.
-    #[test]
-    fn a_layer_is_the_services_by_its_source() {
-        let e = entry("652", "https://x/rest/services/a/MapServer/65");
-        let url = features_url(&e, None).expect("a layer's features query");
-        assert!(added_by(&e, &url), "{url}");
-        let view = arcgis::View { bbox: [-8_250_000.0, 520_000.0, -8_230_000.0, 530_000.0] };
-        let url = features_url(&e, Some(view)).expect("a layer's features query in a view");
-        assert!(added_by(&e, &url), "{url}");
-        let by_hand = arcgis::features_url(&e, None).expect("the same query, unmarked");
-        assert!(!added_by(&e, &by_hand), "the same query added by hand: {by_hand}");
-        assert!(!added_by(&e, &format!("{by_hand}&{MARK}x")), "a parameter that only starts as the mark");
-        assert!(!added_by(&e, &format!("https://x/rest/services/a/MapServer/652/query?where=1%3D1&{MARK}")), "another layer's query");
-        assert!(!added_by(&e, "https://x/rest/services/a/MapServer/65"), "the layer's address, not its query");
-        assert!(!added_by(&e, "/home/user/Lote.gpkg"), "a file of the same name");
-        // Its name, or its name as RustGIS gives a second layer of it.
-        assert!(named(&e, "Lote") && named(&e, "Lote (2)") && named(&e, "Lote (13)"));
-        assert!(!named(&e, "Lotes") && !named(&e, "Lote (a)") && !named(&e, "Lote ()") && !named(&e, "Lote (2) copy"));
-    }
-
+    /// The index and the manifest are JSON, and the manifest's id is the one the plugin marks its
+    /// layers with.
     #[test]
     fn the_index_and_manifest_read() {
         let doc: Value = serde_json::from_str(INDEX).expect("index.json is JSON");
         assert!(doc.get("entries").is_some_and(Value::is_array));
         let manifest: Value = serde_json::from_str(MANIFEST).expect("plugin.json is JSON");
-        assert_eq!(manifest["id"], "ide-bogota");
+        assert_eq!(manifest["id"], PLUGIN);
     }
 
     fn themed(id: &str, name: &str, category: Option<&str>, subcategory: Option<&str>) -> Entry {

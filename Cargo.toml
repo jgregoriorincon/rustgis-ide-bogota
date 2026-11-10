@@ -10,7 +10,7 @@ edition = "2024"
 license = "MIT"
 
 [workspace.dependencies]
-ide-core = { git = "https://github.com/jgregoriorincon/rustgis-ide-core", tag = "v0.3.0" }
+ide-core = { git = "https://github.com/jgregoriorincon/rustgis-ide-core", tag = "v0.3.1" }
 rustgis-plugin = { git = "https://github.com/opengeos/rustgis-plugins" }
 serde_json = "1"
 

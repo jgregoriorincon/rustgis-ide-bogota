@@ -1,7 +1,7 @@
 {
   "id": "ide-bogota",
   "name": "IDE Bogotá",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Browse IDECA's catalogue of Bogotá's public geographic services and add them to the map: an ArcGIS layer's features, or a service's map image.",
   "author": "Jose Gregorio Rincon Albarracin",
   "homepage": "https://github.com/jgregoriorincon/rustgis-ide-bogota",

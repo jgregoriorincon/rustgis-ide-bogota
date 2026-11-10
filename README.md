@@ -2,10 +2,9 @@
 
 A [RustGIS](https://github.com/opengeos/RustGIS) plugin to browse the catalogue of
 [IDECA](https://www.ideca.gov.co), Bogotá's spatial data infrastructure, and add its public
-services to the map: an ArcGIS layer's features in the map view, or a service's map image.
-Adding a layer's features again replaces the ones added before with the new view's. When the
-view holds none of a layer, the map goes to its data first (to Bogotá's centre at the scale it is
-drawn at, for a layer drawn only close in).
+services to the map: an ArcGIS layer's features, or a service's map image. Adding a layer
+takes the map to its extent, as any viewer does, and adding it again replaces the one added
+before.
 
 It needs RustGIS 0.6.0 or later, and the `edit` and `network` permissions.
 
@@ -16,9 +15,8 @@ The plugin has a ribbon tab of its own, **IDE Bogotá**:
 - **Catalogue** opens the IDECA Catalogue panel: the catalogue as a tree with a search box,
   the chosen service's details (with the scales it is drawn at) and the buttons that apply to
   it, **Add Features** and **Add Map Image**.
-- **Most Consulted** adds, with one click, IDECA's most consulted services as features in the
-  map view: lots, schools, buildings, postcodes and, under **CADE Network**, CADE, RapiCADE and
-  SuperCADE.
+- **Most Consulted** adds, with one click, IDECA's most consulted services as features: lots,
+  schools, buildings, postcodes and, under **CADE Network**, CADE, RapiCADE and SuperCADE.
 - **By Theme** holds menus of other layers most maps of Bogotá start from, each listed once:
   **Cadastre** (blocks, cadastral sectors, reference land values), **Boundaries** (localities,
   planning units, legalised neighbourhoods), **Education** (public school places, local education

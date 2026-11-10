@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "ide-bogota"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "ide-core",
  "rustgis-plugin",
@@ -12,8 +12,8 @@ dependencies = [
 
 [[package]]
 name = "ide-core"
-version = "0.3.0"
-source = "git+https://github.com/jgregoriorincon/rustgis-ide-core?tag=v0.3.0#bb98afbd5490bad20ab7371a3bc38bb0f45074c8"
+version = "0.3.1"
+source = "git+https://github.com/jgregoriorincon/rustgis-ide-core?tag=v0.3.1#0eb92e86f8af27e1629505b2498527cc997d5b3c"
 dependencies = [
  "serde_json",
 ]

@@ -50,6 +50,9 @@ const INDEX: &str = include_str!("../index.json");
 const LABEL_MAX: usize = 200;
 /// The most downloads a command may leave to RustGIS at once.
 const MAX_DOWNLOADS: usize = 16;
+/// A parameter of the plugin's own on the features queries it adds, which ArcGIS servers ignore:
+/// a layer's source keeps it, so the plugin knows its layers from the same query added by hand.
+const MARK: &str = "rustgis-plugin=ide-bogota";
 
 /// A ribbon button that adds one of the catalogue's layers by its id in the catalogue (a test
 /// checks the index still holds it): IDECA's most consulted services and the reference layers
@@ -413,7 +416,7 @@ fn add(req: &Request, e: &Entry) -> Result<Done, String> {
                 _ => {}
             }
             let view = arcgis::view_of(&host::view()?);
-            let url = arcgis::features_url(e, view).ok_or_else(|| not_features(req, e))?;
+            let url = features_url(e, view).ok_or_else(|| not_features(req, e))?;
             // A service's features: in the app RustGIS reads them in pages, as protocol buffers
             // when the layer lists them (else GeoJSON), off the frame; `rustgis-cli` takes the
             // server's one answer. Either way RustGIS itself says when some were left out.
@@ -518,10 +521,19 @@ fn named(e: &Entry, name: &str) -> bool {
     }
 }
 
-/// Whether a layer whose source is `source` came from `e`'s features query ([`arcgis::features_url`]).
-/// Up to `/query?`, so layer 65's query isn't layer 652's.
+/// `e`'s features query ([`arcgis::features_url`]), with the plugin's [`MARK`].
+fn features_url(e: &Entry, view: Option<arcgis::View>) -> Option<String> {
+    arcgis::features_url(e, view).map(|url| format!("{url}&{MARK}"))
+}
+
+/// Whether a layer whose source is `source` is one the plugin added of `e`: `e`'s features query
+/// (up to `/query?`, so layer 65's query isn't layer 652's), with the plugin's [`MARK`]. The same
+/// query added by hand, or by 0.3.1 and earlier, has no mark and isn't the plugin's.
 fn added_by(e: &Entry, source: &str) -> bool {
-    source.strip_prefix(e.url.as_str()).is_some_and(|rest| rest.starts_with("/query?"))
+    source
+        .strip_prefix(e.url.as_str())
+        .and_then(|rest| rest.strip_prefix("/query?"))
+        .is_some_and(|params| params.split('&').any(|p| p == MARK))
 }
 
 /// Why nothing was added: the view holds none of the layer, and where its data is couldn't be
@@ -578,7 +590,7 @@ fn refresh(req: &Request, entries: &[Entry]) -> Result<Done, String> {
     let mut waiting = false;
     let mut answers = Vec::new();
     for e in &found {
-        let Some(url) = arcgis::features_url(e, view) else { continue };
+        let Some(url) = features_url(e, view) else { continue };
         let out = host::run("layer.addUrl", json!({"url": url, "name": e.name, "zoom": false, "service": true}))?;
         if out.get("pending").and_then(Value::as_bool) == Some(true) {
             waiting = true;
@@ -731,14 +743,20 @@ mod tests {
         Entry::new(&Raw { id: Some(id), name: Some("Lote"), url: Some(url), ..Raw::default() }).expect("a valid entry")
     }
 
-    /// A layer is the service's when its source is the service's features query, not when it has
-    /// its name or another layer's address.
+    /// A layer is the plugin's when its source is the service's features query with the plugin's
+    /// mark, not when it has its name, another layer's address, or the same query added by hand.
     #[test]
     fn a_layer_is_the_services_by_its_source() {
         let e = entry("652", "https://x/rest/services/a/MapServer/65");
-        let url = arcgis::features_url(&e, None).expect("a layer's features query");
+        let url = features_url(&e, None).expect("a layer's features query");
         assert!(added_by(&e, &url), "{url}");
-        assert!(!added_by(&e, "https://x/rest/services/a/MapServer/652/query?where=1%3D1"), "another layer's query");
+        let view = arcgis::View { bbox: [-8_250_000.0, 520_000.0, -8_230_000.0, 530_000.0] };
+        let url = features_url(&e, Some(view)).expect("a layer's features query in a view");
+        assert!(added_by(&e, &url), "{url}");
+        let by_hand = arcgis::features_url(&e, None).expect("the same query, unmarked");
+        assert!(!added_by(&e, &by_hand), "the same query added by hand: {by_hand}");
+        assert!(!added_by(&e, &format!("{by_hand}&{MARK}x")), "a parameter that only starts as the mark");
+        assert!(!added_by(&e, &format!("https://x/rest/services/a/MapServer/652/query?where=1%3D1&{MARK}")), "another layer's query");
         assert!(!added_by(&e, "https://x/rest/services/a/MapServer/65"), "the layer's address, not its query");
         assert!(!added_by(&e, "/home/user/Lote.gpkg"), "a file of the same name");
         // Its name, or its name as RustGIS gives a second layer of it.

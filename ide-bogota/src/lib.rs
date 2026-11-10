@@ -20,8 +20,7 @@
 //!
 //! - The plugin's ribbon tab, IDE Bogotá, holds what works without choosing anything: the button
 //!   that opens the panel, buttons for IDECA's most consulted services and menus of layers by
-//!   theme ([`REFERENCES`], added as `add` adds them), IDECA's basemaps ([`BASEMAPS`])
-//!   and `refresh-view`, which adds the catalogue's layers on the map again in the map view.
+//!   theme ([`REFERENCES`], added as `add` adds them) and IDECA's basemaps ([`BASEMAPS`]).
 //!   `show`, `add` and `image` act on the panel's choice, so they are its buttons, not the
 //!   ribbon's.
 //!
@@ -47,8 +46,6 @@ const MANIFEST: &str = include_str!("../plugin.json");
 const INDEX: &str = include_str!("../index.json");
 /// A tree row's most characters (RustGIS clips labels at 200).
 const LABEL_MAX: usize = 200;
-/// The most downloads a command may leave to RustGIS at once.
-const MAX_DOWNLOADS: usize = 16;
 /// The plugin's id, as `plugin.json` gives it: its features queries carry it
 /// ([`layers::mark`]), so it knows its layers from the same query added by hand.
 const PLUGIN: &str = "ide-bogota";
@@ -185,7 +182,6 @@ fn handle(req: Request) -> Result<Value, String> {
         }
         "add" => add(&req, pick()?)?,
         "image" => image(&req, pick()?)?,
-        "refresh-view" => refresh(&req, &entries)?,
         id => match (reference, BASEMAPS.iter().find(|b| b.command == id)) {
             (Some(_), _) => {
                 let e = service
@@ -439,47 +435,6 @@ fn tiles(req: &Request, e: &Entry, went: Went) -> Result<Done, String> {
         _ => req.tr(MANIFEST, "Added {name} as a map image, over the basemap.", &name),
     };
     Ok((out, Some(message)))
-}
-
-/// Adds again, in the map view, the features of the catalogue's layers already on the map (known
-/// by their names and sources, [`layers_of`]), each in place of the one there. The map stays
-/// where it is.
-fn refresh(req: &Request, entries: &[Entry]) -> Result<Done, String> {
-    let layers = host::layers()?;
-    let names: Vec<&str> = layers.as_array().into_iter().flatten().filter_map(|l| l.get("name").and_then(Value::as_str)).collect();
-    let mut found: Vec<&Entry> = Vec::new();
-    // By name first, so only the layers that may be the catalogue's are asked their source.
-    for e in entries.iter().filter(|e| e.kind == Kind::ArcGisLayer && names.iter().any(|n| layers::named(e, n))) {
-        // Two services of one name, both on the map: the first, as the new layers would share it.
-        if !found.iter().any(|f| f.name == e.name) && !layers_of(e)?.is_empty() {
-            found.push(e);
-        }
-    }
-    if found.is_empty() {
-        return Err(req.tr(MANIFEST, "The map holds none of IDECA's layers: add one from the catalogue or the ribbon first.", &[]));
-    }
-    found.truncate(MAX_DOWNLOADS);
-    let view = arcgis::view_of(&host::view()?);
-    let mut waiting = false;
-    let mut answers = Vec::new();
-    for e in &found {
-        let Some(url) = layers::features_url(e, view, PLUGIN) else { continue };
-        let out = host::run("layer.addUrl", json!({"url": url, "name": e.name, "zoom": false, "service": true}))?;
-        if out.get("pending").and_then(Value::as_bool) == Some(true) {
-            waiting = true;
-        } else if let Some(new) = out.get("layer") {
-            // After the call, as in `add`: the run after the downloads land would remove them.
-            replace(e, new)?;
-        }
-        answers.push(out);
-    }
-    let list = found.iter().map(|e| e.name.as_str()).collect::<Vec<_>>().join(", ");
-    let message = if waiting {
-        req.tr(MANIFEST, "Updating to the map view: {names}. Each layer is replaced when it lands.", &[("names", &list)])
-    } else {
-        req.tr(MANIFEST, "Updated to the map view: {names}.", &[("names", &list)])
-    };
-    Ok((json!({"layers": answers}), Some(message)))
 }
 
 /// Puts one of IDECA's basemaps under the map's layers, in place of the other tile basemaps.
@@ -763,7 +718,7 @@ mod tests {
         let commands: Vec<&str> = manifest["commands"].as_array().unwrap().iter().filter_map(|c| c["id"].as_str()).collect();
         let tab = tab_items(&manifest);
         // Every command is handled: the panel's, the reference layers' and the basemaps'.
-        let mut handled = vec!["panel-state", "show", "add", "image", "refresh-view"];
+        let mut handled = vec!["panel-state", "show", "add", "image"];
         handled.extend(REFERENCES.iter().map(|r| r.command));
         handled.extend(BASEMAPS.iter().map(|b| b.command));
         let (mut a, mut b) = (commands.clone(), handled.clone());
@@ -771,7 +726,7 @@ mod tests {
         b.sort_unstable();
         assert_eq!(a, b, "the manifest's commands are the ones handled");
         // The tab: the panel, then the commands that act on nothing chosen; not the panel's.
-        let mut wanted = vec!["panel".to_string(), "refresh-view".to_string()];
+        let mut wanted = vec!["panel".to_string()];
         wanted.extend(REFERENCES.iter().map(|r| r.command.to_string()));
         wanted.extend(BASEMAPS.iter().map(|b| b.command.to_string()));
         // Each once: a most consulted layer isn't in its theme's menu too.

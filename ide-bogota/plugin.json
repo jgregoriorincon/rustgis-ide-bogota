@@ -43,12 +43,6 @@
     { "id": "ref-rapicade", "label": "RapiCADE", "help": "Add the RapiCADE citizen service points.", "icon": "point_layer" },
     { "id": "ref-supercade", "label": "SuperCADE", "help": "Add the SuperCADE citizen service centres.", "icon": "point_layer" },
     { "id": "ref-malla-vial", "label": "Road\nNetwork", "help": "Add Bogotá's road network (Malla Vial Integral).", "icon": "line_layer" },
-    {
-      "id": "refresh-view",
-      "label": "Update to\nView",
-      "help": "Add the features of IDECA's layers on the map again, in the map view, each in place of the one there.",
-      "icon": "update"
-    },
     { "id": "basemap-vector", "label": "Vector", "help": "Put this IDECA basemap under the map's layers, in place of the other tile basemaps.", "icon": "web_map" },
     { "id": "basemap-hybrid", "label": "Hybrid", "help": "Put this IDECA basemap under the map's layers, in place of the other tile basemaps.", "icon": "raster_layer" },
     { "id": "basemap-grey", "label": "Grey", "help": "Put this IDECA basemap under the map's layers, in place of the other tile basemaps.", "icon": "basemap" },
@@ -97,8 +91,7 @@
             "items": ["basemap-bike", "basemap-blue", "basemap-topographic", "basemap-toner", "basemap-cundinamarca"]
           }
         ]
-      },
-      { "label": "In the Map", "items": ["refresh-view"] }
+      }
     ]
   },
   "panel": {
@@ -205,8 +198,6 @@
       "{name} can't be added as features: WMS, WFS and WMTS services come in a later version.": "{name} no se puede agregar como features: los servicios WMS, WFS y WMTS llegan en una versión posterior.",
       "{name} has no map image: only ArcGIS MapServer and ImageServer services draw one.": "{name} no tiene imagen del mapa: solo los MapServer e ImageServer de ArcGIS la dibujan.",
       "IDE Bogotá has no command '{id}'.": "IDE Bogotá no tiene el comando '{id}'.",
-      "Update to\nView": "Actualizar\na la vista",
-      "Add the features of IDECA's layers on the map again, in the map view, each in place of the one there.": "Vuelve a agregar, en la vista del mapa, las features de las capas de IDECA que ya están en el mapa, cada una en lugar de la anterior.",
       "Put this IDECA basemap under the map's layers, in place of the other tile basemaps.": "Pone este mapa base de IDECA bajo las capas del mapa, en lugar de los otros mapas base de teselas.",
       "Topographic basemap": "Mapa Base Topográfico",
       "Grey basemap": "Mapa Base Gris",
@@ -229,13 +220,9 @@
       "Bike": "Bici",
       "Cundinamarca Municipalities": "Municipios Cundinamarca",
       "Choose one of IDECA's other basemaps.": "Elige otro de los mapas base de IDECA.",
-      "In the Map": "En el mapa",
       "IDECA Catalogue": "Catálogo IDECA",
       "Result": "Resultado",
       "This layer is no longer in IDECA's catalogue: look for it in the catalogue.": "Esta capa ya no está en el catálogo de IDECA: búscala en el catálogo.",
-      "The map holds none of IDECA's layers: add one from the catalogue or the ribbon first.": "El mapa no tiene capas de IDECA: agrega una desde el catálogo o el ribbon primero.",
-      "Updating to the map view: {names}. Each layer is replaced when it lands.": "Actualizando a la vista del mapa: {names}. Cada capa se reemplaza cuando llegue.",
-      "Updated to the map view: {names}.": "Actualizadas a la vista del mapa: {names}.",
       "Basemap: {name}.": "Mapa base: {name}.",
       "Basemap: {name}. The map went to Bogotá, which it draws.": "Mapa base: {name}. El mapa fue a Bogotá, que es lo que dibuja.",
       "Drawn down to 1:{max}.": "Se dibuja hasta 1:{max}."

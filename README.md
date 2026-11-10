@@ -25,8 +25,6 @@ The plugin has a ribbon tab of its own, **IDE Bogotá**:
   them: Vector (its main one), Hybrid, Grey and Dark as buttons, and Bike, Blue, Topographic,
   Toner and Cundinamarca's municipalities under **More Basemaps**. A map away from Bogotá goes
   there.
-- **Update to View** adds the IDECA layers already on the map again in the map view. A layer
-  holds the features of the view it was added in: moving the map doesn't fetch more.
 
 ## Install
 

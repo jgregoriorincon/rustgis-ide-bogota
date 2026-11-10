@@ -4,7 +4,7 @@
 //! with the same reader as the live catalogue) as a tree. A plugin keeps nothing between calls,
 //! so every click reads the list again: the index costs little, while reading the 665 KB
 //! catalogue on each click ran out of a command's fuel, and so did reading it once to compare it
-//! with the index. The repository's CI does that instead: it rebuilds the index each week and
+//! with the index. The repository's CI does that instead: it rebuilds the index each month and
 //! proposes it when the catalogue changed (`.github/workflows/refresh-index.yml`).
 //!
 //! - `panel-state` runs when the panel opens; `show` when a node of the tree is chosen. The tree

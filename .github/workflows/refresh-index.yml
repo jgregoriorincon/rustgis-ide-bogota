@@ -1,7 +1,7 @@
 name: Refresh indexes
 
 # Each plugin carries an index of its catalogue: reading the catalogue live doesn't fit in a
-# plugin command's fuel. Each week this rebuilds the indexes with the plugins' own readers and,
+# plugin command's fuel. Each month this rebuilds the indexes with the plugins' own readers and,
 # when a catalogue changed, opens a pull request with the new index to review and release.
 #
 # The repository must let GitHub Actions create pull requests (Settings › Actions › General ›
@@ -9,8 +9,8 @@ name: Refresh indexes
 # reopen one, or push to it, to run it.
 on:
   schedule:
-    # Mondays, 06:00 in Bogotá.
-    - cron: "0 11 * * 1"
+    # The 1st of each month, 06:00 in Bogotá. Run it by hand from the Actions tab at any time.
+    - cron: "0 11 1 * *"
   workflow_dispatch:
 
 permissions:

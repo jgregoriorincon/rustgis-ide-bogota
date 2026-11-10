@@ -11,14 +11,12 @@
 //!   holds categories, their subcategories, then the services, each branch with how many
 //!   services it holds; RustGIS's search box above it finds them by name. A category whose
 //!   services have no subcategory holds them itself.
-//! - `add` adds an ArcGIS layer's features in the map view, with the catalogue's filter applied
-//!   by the server (or a GeoJSON document). `image` adds a MapServer's or ImageServer's map image
-//!   as a tile layer. Both first take the map to where a layer shows: to the scales it draws at
-//!   (ArcGIS's `minScale` and `maxScale`) when the map is outside them, then to the box that
-//!   holds its data (with its filter) when the view holds none of it; otherwise the map stays,
-//!   so a big layer still comes a piece at a time. Both act on the chosen service, or on the one their `service` parameter
-//!   names, so they work from scripts and `rustgis-cli` too (where the panel never opened and
-//!   its tree has no nodes yet): `plugin:ide-bogota/add={"service": "7956"}`.
+//! - `add` adds an ArcGIS layer's features, with the catalogue's filter applied by the server (or
+//!   a GeoJSON document). `image` adds a MapServer's or ImageServer's map image as a tile layer.
+//!   Both do what any viewer does: read the layer's description, take the map to its extent, and
+//!   add it. Both act on the chosen service, or on the one their `service` parameter names, so
+//!   they work from scripts and `rustgis-cli` too (where the panel never opened and its tree has
+//!   no nodes yet): `plugin:ide-bogota/add={"service": "7956"}`.
 //!
 //! - The plugin's ribbon tab, IDE Bogotá, holds what works without choosing anything: the button
 //!   that opens the panel, buttons for IDECA's most consulted services and menus of layers by
@@ -270,117 +268,39 @@ fn fetch(url: &str) -> Fetched {
     }
 }
 
-/// How many of a layer's features the map view holds, as its server counts them.
-enum InView {
-    Count(u64),
-    /// The server didn't say (an error, a layer that doesn't count).
-    Unknown,
-    /// The web app is asking the server: the command runs again when it answers.
-    Pending,
-}
-
-fn in_view(e: &Entry) -> Result<InView, String> {
-    let Some(url) = arcgis::view_of(&host::view()?).and_then(|view| arcgis::count_url(e, view)) else { return Ok(InView::Unknown) };
-    Ok(match fetch(&url) {
-        Fetched::Pending => InView::Pending,
-        Fetched::Doc(answer) => arcgis::count_of(&answer).map_or(InView::Unknown, InView::Count),
-        Fetched::Failed => InView::Unknown,
-    })
-}
-
-/// Where the map goes first when the view holds none of a layer drawn only close in: Bogotá's
-/// centre, when the layer's box holds it. Most of IDECA's data is in the city, while the box's
-/// own centre can be in rural Sumapaz (Catastro's lots).
-const HOME: [f64; 2] = [-74.08, 4.65];
-
 /// Where [`to_data`] left the map.
 #[derive(Clone, Copy, PartialEq)]
 enum Went {
+    /// Where it was: not an ArcGIS layer, so its extent isn't known.
     Stayed,
-    /// In or out to this scale (RustGIS's), the nearest the layer draws at.
-    Scaled(f64),
-    /// To the data: the view held none of it.
+    /// To the layer's extent.
     Moved,
-    /// Nowhere: the view holds none of it, and where its data is couldn't be found.
+    /// Nowhere: its extent couldn't be found, or it has no data.
     Lost,
     /// The web app is asking the server: the command runs again when it answers.
     Pending,
 }
 
-/// Takes the map to where an ArcGIS layer shows (`layer` is its description, `…/MapServer/3?f=json`):
-///
-/// 1. to the scale it draws at, round the view's centre, when the map is outside its range (a
-///    server draws no map image there, and a layer drawn from 1:10,000 in is too big to download
-///    over the whole city);
-/// 2. to its data when the view then holds none of it. The box that holds the data is the one the
-///    description declares, else (a filtered entry, a box in another system) the one the server
-///    works out, which can take it most of a minute on a big layer. A layer drawn at any scale is
-///    shown whole (the box); one drawn only close in, at its scale, at [`HOME`] when the box holds
-///    it, else at the box's centre: the first of them where the view holds some of the data.
-///
-/// When the view holds some data, or the server doesn't count, the map stays where it is, so a
-/// big layer still comes a piece at a time. When the view holds none and its data can't be
-/// found, [`Went::Lost`]: there is nothing to add there.
+/// Takes the map to an ArcGIS layer's extent, as any viewer does when a layer is added: the one
+/// its description declares (`layer`, `…/MapServer/3?f=json`), else (a filtered entry, an extent
+/// in another system) the one its server works out for the data that pass the filter.
 fn to_data(e: &Entry, layer: &Value) -> Result<Went, String> {
     if e.kind != Kind::ArcGisLayer {
         return Ok(Went::Stayed);
     }
-    let range = arcgis::scale_range(layer);
-    let went = fit_scale(range)?.map_or(Went::Stayed, Went::Scaled);
-    match in_view(e)? {
-        InView::Pending => return Ok(Went::Pending),
-        InView::Count(0) => {}
-        _ => return Ok(went),
-    }
-    let bbox = match arcgis::declared_extent(e, layer) {
-        Some(bbox) => Some(bbox),
+    let extent = match arcgis::declared_extent(e, layer) {
+        Some(extent) => Some(extent),
         None => match arcgis::extent_url(e).map(|u| fetch(&u)) {
             Some(Fetched::Pending) => return Ok(Went::Pending),
             Some(Fetched::Doc(answer)) => arcgis::extent_of(&answer),
             _ => None,
         },
     };
-    // No data at all (the filter leaves none), or a server that didn't answer in time.
-    let Some(bbox) = bbox else { return Ok(Went::Lost) };
-    if range.0.is_none() {
-        return Ok(match host::run("map.zoomToExtent", json!({"extent": bbox})) {
-            Ok(_) => {
-                fit_scale(range)?;
-                Went::Moved
-            }
-            // A box RustGIS can't go to.
-            Err(_) => Went::Lost,
-        });
-    }
-    let [w, s, east, north] = bbox;
-    let home = (w..=east).contains(&HOME[0]) && (s..=north).contains(&HOME[1]);
-    let centre = [(w + east) / 2.0, (s + north) / 2.0];
-    for [lon, lat] in home.then_some(HOME).into_iter().chain([centre]) {
-        if host::run("map.goToXY", json!({"lon": lon, "lat": lat})).is_err() {
-            continue;
-        }
-        fit_scale(range)?;
-        match in_view(e)? {
-            InView::Pending => return Ok(Went::Pending),
-            InView::Count(0) => {}
-            _ => return Ok(Went::Moved),
-        }
-    }
-    Ok(Went::Lost)
-}
-
-/// Zooms round the view's centre to the nearest scale in `range` when the map is outside it:
-/// the scale gone to.
-fn fit_scale(range: (Option<f64>, Option<f64>)) -> Result<Option<f64>, String> {
-    let view = host::view()?;
-    let n = |v: Option<&Value>| v.and_then(Value::as_f64);
-    let center = view.get("center");
-    let (Some(lon), Some(lat), Some(scale)) = (n(center.and_then(|c| c.get(0))), n(center.and_then(|c| c.get(1))), n(view.get("scale")))
-    else {
-        return Ok(None);
-    };
-    let Some(target) = arcgis::fit_scale(scale, lat, range) else { return Ok(None) };
-    Ok(host::run("map.goToXY", json!({"lon": lon, "lat": lat, "scale": target})).ok().map(|_| target))
+    let Some(extent) = extent else { return Ok(Went::Lost) };
+    Ok(match host::run("map.zoomToExtent", json!({"extent": extent})) {
+        Ok(_) => Went::Moved,
+        Err(_) => Went::Lost,
+    })
 }
 
 /// A layer's description (`…/MapServer/3?f=json`): the scales it draws at and the box of its
@@ -398,14 +318,14 @@ fn scale_text(scale: f64) -> String {
     format!("{:.0}", scale)
 }
 
-/// Adds a service's features: an ArcGIS layer's in the map view, filtered by the server, or a
-/// GeoJSON document. In the web app, where a command can't download features, an ArcGIS layer's
-/// map image instead.
+/// Adds a service's features: an ArcGIS layer's, all that pass the catalogue's filter, after taking
+/// the map to its extent ([`to_data`]); or a GeoJSON document, zoomed to. In the web app, where a
+/// command can't download features, an ArcGIS layer's map image instead.
 fn add(req: &Request, e: &Entry) -> Result<Done, String> {
     let name = [("name", e.name.as_str())];
     match e.kind {
         Kind::GeoJson => {
-            let out = host::run("layer.addUrl", json!({"url": e.url, "name": e.name}))?;
+            let out = host::run("layer.addUrl", json!({"url": e.url, "name": e.name, "zoom": true}))?;
             Ok((out, Some(req.tr(MANIFEST, "Added {name}.", &name))))
         }
         Kind::ArcGisLayer => {
@@ -416,32 +336,22 @@ fn add(req: &Request, e: &Entry) -> Result<Done, String> {
                 Went::Lost => return Err(lost(req, e)),
                 _ => {}
             }
-            let view = arcgis::view_of(&host::view()?);
-            let url = layers::features_url(e, view, PLUGIN).ok_or_else(|| not_features(req, e))?;
+            let url = layers::features_url(e, None, PLUGIN).ok_or_else(|| not_features(req, e))?;
             // A service's features: in the app RustGIS reads them in pages, as protocol buffers
             // when the layer lists them (else GeoJSON), off the frame; `rustgis-cli` takes the
             // server's one answer. Either way RustGIS itself says when some were left out.
             match host::run("layer.addUrl", json!({"url": url, "name": e.name, "zoom": false, "service": true})) {
                 Ok(out) => {
                     // One layer per service: the one an earlier Add Features left goes once the
-                    // new one is in, so the map shows the view asked for last. Not before the
-                    // call: the command runs again when the download lands, and that run would
-                    // remove the layer it brought.
+                    // new one is in. Not before the call: the command runs again when the
+                    // download lands, and that run would remove the layer it brought.
                     if let Some(new) = out.get("layer") {
                         replace(e, new)?;
                     }
                     let message = if out.get("pending").and_then(Value::as_bool) == Some(true) {
                         req.tr(MANIFEST, "Downloading {name}; it is added when it lands.", &name)
                     } else {
-                        match went {
-                            Went::Moved => req.tr(MANIFEST, "The map view held none of {name}: zoomed to its data and added it.", &name),
-                            Went::Scaled(s) => req.tr(
-                                MANIFEST,
-                                "Zoomed to 1:{scale}, where {name} is drawn, and added it.",
-                                &[("scale", &scale_text(s)), ("name", &e.name)],
-                            ),
-                            _ => req.tr(MANIFEST, "Added {name} in the map view.", &name),
-                        }
+                        req.tr(MANIFEST, "Zoomed to {name} and added it.", &name)
                     };
                     Ok((out, Some(message)))
                 }
@@ -459,7 +369,7 @@ fn add(req: &Request, e: &Entry) -> Result<Done, String> {
 }
 
 /// Adds a MapServer's or ImageServer's map image as a tile layer over the basemap, after taking
-/// the map to where a layer shows ([`to_data`]; a whole service can't be asked).
+/// the map to a layer's extent ([`to_data`]; a whole service has none to ask).
 fn image(req: &Request, e: &Entry) -> Result<Done, String> {
     if arcgis::image_template(e).is_none() || e.kind != Kind::ArcGisLayer {
         return tiles(req, e, Went::Stayed);
@@ -509,17 +419,12 @@ fn layers_of(e: &Entry) -> Result<Vec<(Value, String)>, String> {
         .collect())
 }
 
-/// Why nothing was added: the view holds none of the layer, and where its data is couldn't be
-/// found.
+/// Why nothing was added: the layer's extent couldn't be found, or it has no data.
 fn lost(req: &Request, e: &Entry) -> String {
-    req.tr(
-        MANIFEST,
-        "The map view holds none of {name}, and its server didn't say where its data is: move the map to it and add it again.",
-        &[("name", e.name.as_str())],
-    )
+    req.tr(MANIFEST, "{name}'s server didn't give its extent, or it has no data.", &[("name", e.name.as_str())])
 }
 
-/// The map image's tile layer; `went` says whether the map just went to the data.
+/// The map image's tile layer; `went` says whether the map just went to the layer's extent.
 fn tiles(req: &Request, e: &Entry, went: Went) -> Result<Done, String> {
     let name = [("name", e.name.as_str())];
     let template = arcgis::image_template(e)
@@ -530,20 +435,15 @@ fn tiles(req: &Request, e: &Entry, went: Went) -> Result<Done, String> {
     }
     let out = host::run("map.addTiles", params)?;
     let message = match went {
-        Went::Moved => req.tr(MANIFEST, "The map view held none of {name}: zoomed to its data and added it as a map image.", &name),
-        Went::Scaled(s) => req.tr(
-            MANIFEST,
-            "Zoomed to 1:{scale}, where {name} is drawn, and added it as a map image.",
-            &[("scale", &scale_text(s)), ("name", &e.name)],
-        ),
+        Went::Moved => req.tr(MANIFEST, "Zoomed to {name} and added it as a map image.", &name),
         _ => req.tr(MANIFEST, "Added {name} as a map image, over the basemap.", &name),
     };
     Ok((out, Some(message)))
 }
 
 /// Adds again, in the map view, the features of the catalogue's layers already on the map (known
-/// by their names and sources, [`layers_of`]), each in place of the one there: a layer holds the
-/// view it was added in, and moving the map fetches nothing. The map stays where it is.
+/// by their names and sources, [`layers_of`]), each in place of the one there. The map stays
+/// where it is.
 fn refresh(req: &Request, entries: &[Entry]) -> Result<Done, String> {
     let layers = host::layers()?;
     let names: Vec<&str> = layers.as_array().into_iter().flatten().filter_map(|l| l.get("name").and_then(Value::as_str)).collect();
@@ -655,18 +555,14 @@ fn panel(req: &Request, source: String, nodes: Vec<Node>, service: Option<&Entry
     }
 }
 
-/// The scales a layer draws at, from its description, for its card: why Add Features and Add
-/// Map Image go in first when the map is further out.
+/// The scales a layer draws at, from its description, for its card: outside them its server
+/// draws nothing.
 fn drawn_at(req: &Request, layer: &Value) -> Option<String> {
     match arcgis::scale_range(layer) {
-        (Some(min), Some(max)) => Some(req.tr(
-            MANIFEST,
-            "Drawn between 1:{min} and 1:{max}: the map goes there first.",
-            &[("min", &scale_text(min)), ("max", &scale_text(max))],
-        )),
-        (Some(min), None) => {
-            Some(req.tr(MANIFEST, "Drawn from 1:{min} in: the map goes there first when it is further out.", &[("min", &scale_text(min))]))
+        (Some(min), Some(max)) => {
+            Some(req.tr(MANIFEST, "Drawn between 1:{min} and 1:{max}.", &[("min", &scale_text(min)), ("max", &scale_text(max))]))
         }
+        (Some(min), None) => Some(req.tr(MANIFEST, "Drawn from 1:{min} in.", &[("min", &scale_text(min))])),
         (None, Some(max)) => Some(req.tr(MANIFEST, "Drawn down to 1:{max}.", &[("max", &scale_text(max))])),
         (None, None) => None,
     }
